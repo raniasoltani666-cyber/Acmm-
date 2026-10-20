@@ -1,0 +1,1348 @@
+import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  Activity,
+  ArrowRight,
+  Award,
+  CalendarDays,
+  Check,
+  ChevronRight,
+  Clock3,
+  GraduationCap,
+  LogOut,
+  Mail,
+  MapPin,
+  Menu,
+  ShieldCheck,
+  Stethoscope,
+  Users,
+  X,
+} from 'lucide-react';
+import { Session } from '@supabase/Bolt Database-js';
+import { Bolt Database } from '@/lib/supabase';
+
+type Profile = {
+  id: string;
+  full_name: string;
+  email: string;
+  phone: string | null;
+  specialty: string | null;
+  city: string | null;
+  role: 'member' | 'admin';
+  status: 'pending' | 'approved' | 'rejected' | 'suspended';
+};
+
+type Event = {
+  id: string;
+  title: string;
+  description: string;
+  location: string;
+  starts_at: string;
+  ends_at: string | null;
+  capacity: number | null;
+  is_published: boolean;
+};
+
+type Training = Event & {
+  instructor: string;
+};
+
+type Registration = {
+  id: string;
+  event_id: string;
+  member_id: string;
+  status: string;
+  events?: {
+    title: string;
+    starts_at: string;
+  };
+};
+
+type Certificate = {
+  id: string;
+  title: string;
+  issuer: string;
+  certificate_number: string;
+  issued_at: string;
+};
+
+const formatDate = (value: string) =>
+  new Intl.DateTimeFormat('fr-FR', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(new Date(value));
+
+const friendlyError = () =>
+  'Une erreur est survenue. Vérifiez vos informations puis réessayez.';
+
+function App() {
+  const [session, setSession] = useState<Session | null>(null);
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => setSession(data.session));
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      setSession(nextSession);
+
+      if (!nextSession) {
+        setProfile(null);
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    if (!session?.user.id) {
+      setLoading(false);
+      return;
+    }
+
+    (async () => {
+      const { data } = await Bolt Database
+        .from('profiles')
+        .select('*')
+        .eq('id', session.user.id)
+        .maybeSingle();
+
+      setProfile(data as Profile | null);
+      setLoading(false);
+    })();
+  }, [session]);
+
+  if (loading) {
+    return (
+      <div className="splash">
+        <div className="brand-mark">
+          <Stethoscope size={30} />
+        </div>
+        <span>ACMM</span>
+      </div>
+    );
+  }
+
+  if (!session) {
+    return <AuthScreen />;
+  }
+
+  if (!profile) {
+    return (
+      <div className="center-page">
+        <p>Votre profil est en cours de préparation.</p>
+        <button
+          className="button secondary"
+          onClick={() => supabase.auth.signOut()}
+        >
+          Se déconnecter
+        </button>
+      </div>
+    );
+  }
+
+  return profile.role === 'admin' && profile.status === 'approved' ? (
+    <AdminApp profile={profile} />
+  ) : (
+    <MemberApp profile={profile} />
+  );
+}
+
+function AuthScreen() {
+  const [mode, setMode] = useState<'login' | 'signup' | 'reset'>('login');
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
+  const [form, setForm] = useState({
+    name: '',
+    email: '',
+    password: '',
+  });
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    setBusy(true);
+    setError('');
+    setMessage('');
+
+    const result =
+      mode === 'login'
+        ? await supabase.auth.signInWithPassword({
+            email: form.email,
+            password: form.password,
+          })
+        : mode === 'signup'
+          ? await supabase.auth.signUp({
+              email: form.email,
+              password: form.password,
+              options: {
+                data: {
+                  full_name: form.name,
+                },
+              },
+            })
+          : await supabase.auth.resetPasswordForEmail(form.email);
+
+    if (result.error) {
+      setError(friendlyError());
+    } else if (mode === 'signup') {
+      setMessage(
+        'Votre demande est enregistrée. Vous pourrez accéder à votre espace après validation par l’administration.',
+      );
+    } else if (mode === 'reset') {
+      setMessage(
+        'Si cette adresse est enregistrée, vous recevrez un lien de réinitialisation.',
+      );
+    }
+
+    setBusy(false);
+  };
+
+  return (
+    <main className="auth-layout">
+      <section className="auth-visual">
+        <img
+          className="watermark-logo"
+          src="/1792262322165 copy 2.jpg"
+          alt=""
+          aria-hidden="true"
+        />
+
+        <div className="visual-content">
+          <div className="brand-lockup">
+            <div className="brand-mark">
+              <Stethoscope size={34} />
+            </div>
+            <span>ACMM</span>
+          </div>
+
+          <p className="arabic">
+            الجمعية الولائية للسلك الطبي - سيدي بلعباس
+          </p>
+
+          <div className="visual-line" />
+
+          <p className="slogan">Se former, partager, progresser</p>
+
+          <div className="visual-note">
+            <Activity size={18} />
+            La communauté médicale de Sidi Bel Abbès
+          </div>
+        </div>
+      </section>
+
+      <section className="auth-panel">
+        <div className="auth-box">
+          <div className="mobile-brand">
+            <div className="brand-mark">
+              <Stethoscope size={25} />
+            </div>
+            <strong>ACMM</strong>
+          </div>
+
+          <p className="eyebrow">ESPACE MEMBRES</p>
+
+          <h1>
+            {mode === 'login'
+              ? 'Bienvenue à l’ACMM'
+              : mode === 'signup'
+                ? 'Rejoindre l’association'
+                : 'Réinitialiser le mot de passe'}
+          </h1>
+
+          <p className="muted">
+            {mode === 'login'
+              ? 'Accédez à votre espace professionnel.'
+              : mode === 'signup'
+                ? 'Créez votre compte membre en quelques instants.'
+                : 'Recevez un lien sécurisé par email.'}
+          </p>
+
+          <form onSubmit={submit} className="auth-form">
+            {mode === 'signup' && (
+              <label>
+                Nom complet
+                <input
+                  required
+                  value={form.name}
+                  onChange={(event) =>
+                    setForm({
+                      ...form,
+                      name: event.target.value,
+                    })
+                  }
+                  placeholder="Dr. Prénom Nom"
+                />
+              </label>
+            )}
+
+            <label>
+              Adresse email
+              <div className="input-icon">
+                <Mail size={17} />
+                <input
+                  required
+                  type="email"
+                  value={form.email}
+                  onChange={(event) =>
+                    setForm({
+                      ...form,
+                      email: event.target.value,
+                    })
+                  }
+                  placeholder="vous@exemple.com"
+                />
+              </div>
+            </label>
+
+            {mode !== 'reset' && (
+              <label>
+                Mot de passe
+                <input
+                  required
+                  minLength={6}
+                  type="password"
+                  value={form.password}
+                  onChange={(event) =>
+                    setForm({
+                      ...form,
+                      password: event.target.value,
+                    })
+                  }
+                  placeholder="6 caractères minimum"
+                />
+              </label>
+            )}
+
+            {error && <div className="alert error">{error}</div>}
+
+            {message && <div className="alert success">{message}</div>}
+
+            <button className="button primary full" disabled={busy}>
+              {busy
+                ? 'Veuillez patienter…'
+                : mode === 'login'
+                  ? 'Se connecter'
+                  : mode === 'signup'
+                    ? 'Créer mon compte'
+                    : 'Envoyer le lien'}
+              <ArrowRight size={18} />
+            </button>
+          </form>
+
+          <div className="auth-links">
+            {mode === 'login' && (
+              <>
+                <button onClick={() => setMode('reset')}>
+                  Mot de passe oublié ?
+                </button>
+
+                <span>
+                  Pas encore membre ?{' '}
+                  <button onClick={() => setMode('signup')}>
+                    Créer un compte
+                  </button>
+                </span>
+              </>
+            )}
+
+            {mode !== 'login' && (
+              <button onClick={() => setMode('login')}>
+                Retour à la connexion
+              </button>
+            )}
+          </div>
+        </div>
+      </section>
+    </main>
+  );
+}
+
+function Shell({
+  profile,
+  children,
+  admin = false,
+}: {
+  profile: Profile;
+  children: React.ReactNode;
+  admin?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div className="app-shell">
+      <header className="topbar">
+        <div className="topbar-inner">
+          <div className="brand-small">
+            <div className="brand-mark">
+              <Stethoscope size={20} />
+            </div>
+            <span>ACMM</span>
+          </div>
+
+          <div className="nav-label">
+            {admin ? 'Administration' : 'Espace membre'}
+          </div>
+
+          <button
+            className="menu-button"
+            onClick={() => setOpen(!open)}
+          >
+            <Menu size={20} />
+          </button>
+
+          <div className={`user-menu ${open ? 'open' : ''}`}>
+            <div className="avatar">
+              {(profile.full_name || profile.email).charAt(0).toUpperCase()}
+            </div>
+
+            <div>
+              <strong>{profile.full_name || 'Membre ACMM'}</strong>
+              <small>{admin ? 'Administrateur' : 'Membre'}</small>
+            </div>
+
+            <button
+              className="icon-button"
+              onClick={() => supabase.auth.signOut()}
+              title="Se déconnecter"
+            >
+              <LogOut size={18} />
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <main className="content">{children}</main>
+    </div>
+  );
+}
+
+function MemberApp({ profile }: { profile: Profile }) {
+  const [events, setEvents] = useState<Event[]>([]);
+  const [trainings, setTrainings] = useState<Training[]>([]);
+  const [registrations, setRegistrations] = useState<Registration[]>([]);
+  const [certificates, setCertificates] = useState<Certificate[]>([]);
+  const [notice, setNotice] = useState('');
+
+  const refresh = useCallback(async () => {
+    const [{ data: eventsData }, { data: trainingsData }, { data: registrationsData }, { data: certificatesData }] =
+      await Promise.all([
+        Bolt Database
+          .from('events')
+          .select('*')
+          .eq('is_published', true)
+          .order('starts_at'),
+        Bolt Database
+          .from('trainings')
+          .select('*')
+          .eq('is_published', true)
+          .order('starts_at'),
+        Bolt Database
+          .from('event_registrations')
+          .select('*, events(title, starts_at)')
+          .eq('member_id', profile.id),
+        Bolt Database
+          .from('certificates')
+          .select('*')
+          .eq('member_id', profile.id)
+          .order('issued_at', { ascending: false }),
+      ]);
+
+    setEvents((eventsData || []) as Event[]);
+    setTrainings((trainingsData || []) as Training[]);
+    setRegistrations((registrationsData || []) as Registration[]);
+    setCertificates((certificatesData || []) as Certificate[]);
+  }, [profile.id]);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  const register = async (eventId: string) => {
+    const { error } = await Bolt Database
+      .from('event_registrations')
+      .insert({
+        event_id: eventId,
+        member_id: profile.id,
+      });
+
+    if (error) {
+      setNotice('Impossible de vous inscrire à cet événement.');
+    } else {
+      setNotice('Inscription confirmée.');
+      refresh();
+    }
+  };
+
+  const registeredIds = useMemo(
+    () => new Set(registrations.map((registration) => registration.event_id)),
+    [registrations],
+  );
+
+  return (
+    <Shell profile={profile}>
+      <div className="page-heading">
+        <div>
+          <p className="eyebrow">TABLEAU DE BORD</p>
+          <h1>
+            Bonjour, {profile.full_name?.split(' ')[0] || 'Docteur'}
+          </h1>
+          <p className="muted">
+            Votre espace pour apprendre, participer et faire progresser la
+            médecine.
+          </p>
+        </div>
+
+        <div className={`status-pill ${profile.status}`}>
+          {profile.status === 'pending'
+            ? 'Validation en attente'
+            : profile.status === 'approved'
+              ? 'Membre approuvé'
+              : 'Compte suspendu'}
+        </div>
+      </div>
+
+      {profile.status !== 'approved' && (
+        <div className="notice-card">
+          <Clock3 size={22} />
+
+          <div>
+            <strong>Votre demande est en cours d’examen</strong>
+            <p>
+              L’administration vous donnera accès aux inscriptions dès
+              validation de votre adhésion.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {notice && (
+        <div className="alert success dismissable">
+          {notice}
+          <button onClick={() => setNotice('')}>
+            <X size={16} />
+          </button>
+        </div>
+      )}
+
+      <div className="stats-grid">
+        <Stat
+          icon={<CalendarDays />}
+          value={events.length}
+          label="Événements à venir"
+        />
+        <Stat
+          icon={<GraduationCap />}
+          value={trainings.length}
+          label="Formations disponibles"
+        />
+        <Stat
+          icon={<Award />}
+          value={certificates.length}
+          label="Certificats obtenus"
+        />
+      </div>
+
+      <section className="section">
+        <div className="section-title">
+          <div>
+            <p className="eyebrow">AGENDA ACMM</p>
+            <h2>Prochains événements</h2>
+          </div>
+
+          <span className="section-count">
+            {events.length} rendez-vous
+          </span>
+        </div>
+
+        <div className="card-grid">
+          {events.length ? (
+            events.map((event) => (
+              <EventCard
+                key={event.id}
+                event={event}
+                registered={registeredIds.has(event.id)}
+                disabled={profile.status !== 'approved'}
+                onRegister={register}
+              />
+            ))
+          ) : (
+            <Empty text="Aucun événement publié pour le moment." />
+          )}
+        </div>
+      </section>
+
+      <section className="section">
+        <div className="section-title">
+          <div>
+            <p className="eyebrow">TRANSMISSION</p>
+            <h2>Formations à venir</h2>
+          </div>
+        </div>
+
+        <div className="card-grid">
+          {trainings.length ? (
+            trainings.map((training) => (
+              <TrainingCard key={training.id} training={training} />
+            ))
+          ) : (
+            <Empty text="Aucune formation publiée pour le moment." />
+          )}
+        </div>
+      </section>
+
+      <div className="two-col">
+        <section className="panel">
+          <div className="section-title">
+            <h2>Mes inscriptions</h2>
+            <ChevronRight size={19} />
+          </div>
+
+          {registrations.length ? (
+            registrations.map((registration) => (
+              <div className="list-row" key={registration.id}>
+                <div className="list-icon">
+                  <CalendarDays size={17} />
+                </div>
+
+                <div>
+                  <strong>
+                    {registration.events?.title || 'Événement ACMM'}
+                  </strong>
+                  <small>
+                    {registration.events?.starts_at
+                      ? formatDate(registration.events.starts_at)
+                      : ''}
+                  </small>
+                </div>
+
+                <span className="tag">{registration.status}</span>
+              </div>
+            ))
+          ) : (
+            <p className="muted">
+              Vous n’avez pas encore d’inscription.
+            </p>
+          )}
+        </section>
+
+        <section className="panel">
+          <div className="section-title">
+            <h2>Mes certificats</h2>
+            <Award size={19} />
+          </div>
+
+          {certificates.length ? (
+            certificates.map((certificate) => (
+              <div className="list-row" key={certificate.id}>
+                <div className="list-icon gold">
+                  <Award size={17} />
+                </div>
+
+                <div>
+                  <strong>{certificate.title}</strong>
+                  <small>
+                    {certificate.certificate_number} ·{' '}
+                    {certificate.issued_at}
+                  </small>
+                </div>
+              </div>
+            ))
+          ) : (
+            <p className="muted">
+              Vos certificats apparaîtront ici.
+            </p>
+          )}
+        </section>
+      </div>
+    </Shell>
+  );
+}
+
+function EventCard({
+  event,
+  registered,
+  disabled,
+  onRegister,
+}: {
+  event: Event;
+  registered: boolean;
+  disabled: boolean;
+  onRegister: (id: string) => void;
+}) {
+  return (
+    <article className="event-card">
+      <div className="date-badge">
+        <strong>{new Date(event.starts_at).getDate()}</strong>
+        <span>
+          {new Intl.DateTimeFormat('fr-FR', {
+            month: 'short',
+          })
+            .format(new Date(event.starts_at))
+            .replace('.', '')}
+        </span>
+      </div>
+
+      <div className="card-content">
+        <div className="tag teal">ÉVÉNEMENT</div>
+
+        <h3>{event.title}</h3>
+
+        <p>
+          {event.description ||
+            'Retrouvez la communauté ACMM pour un moment de partage professionnel.'}
+        </p>
+
+        <div className="meta">
+          <span>
+            <CalendarDays size={15} />
+            {formatDate(event.starts_at)}
+          </span>
+
+          <span>
+            <MapPin size={15} />
+            {event.location || 'Lieu à confirmer'}
+          </span>
+        </div>
+
+        <button
+          className={`button ${registered ? 'soft' : 'outline'} small`}
+          disabled={registered || disabled}
+          onClick={() => onRegister(event.id)}
+        >
+          {registered ? (
+            <>
+              <Check size={15} />
+              Inscrit
+            </>
+          ) : disabled ? (
+            'En attente de validation'
+          ) : (
+            'S’inscrire'
+          )}
+
+          {!registered && !disabled && <ArrowRight size={15} />}
+        </button>
+      </div>
+    </article>
+  );
+}
+
+function TrainingCard({ training }: { training: Training }) {
+  return (
+    <article className="training-card">
+      <div className="training-icon">
+        <GraduationCap size={23} />
+      </div>
+
+      <div className="tag gold-tag">FORMATION</div>
+
+      <h3>{training.title}</h3>
+
+      <p>
+        {training.description ||
+          'Une session pour renforcer vos pratiques et partager les expériences.'}
+      </p>
+
+      <div className="meta">
+        <span>
+          <Clock3 size={15} />
+          {formatDate(training.starts_at)}
+        </span>
+
+        <span>
+          <Users size={15} />
+          {training.instructor || 'Équipe ACMM'}
+        </span>
+      </div>
+    </article>
+  );
+}
+
+function Stat({
+  icon,
+  value,
+  label,
+}: {
+  icon: React.ReactNode;
+  value: number;
+  label: string;
+}) {
+  return (
+    <div className="stat-card">
+      <div className="stat-icon">{icon}</div>
+
+      <div>
+        <strong>{value}</strong>
+        <span>{label}</span>
+      </div>
+    </div>
+  );
+}
+
+function Empty({ text }: { text: string }) {
+  return <div className="empty">{text}</div>;
+}
+
+function AdminApp({ profile }: { profile: Profile }) {
+  const [tab, setTab] = useState<
+    'overview' | 'members' | 'events' | 'trainings'
+  >('overview');
+
+  const [members, setMembers] = useState<Profile[]>([]);
+  const [events, setEvents] = useState<Event[]>([]);
+  const [trainings, setTrainings] = useState<Training[]>([]);
+  const [registrations, setRegistrations] = useState<Registration[]>([]);
+  const [notice, setNotice] = useState('');
+  const [showForm, setShowForm] = useState<
+    'event' | 'training' | null
+  >(null);
+
+  const refresh = async () => {
+    const [
+      { data: membersData },
+      { data: eventsData },
+      { data: trainingsData },
+      { data: registrationsData },
+    ] = await Promise.all([
+      Bolt Database
+        .from('profiles')
+        .select('*')
+        .order('created_at', { ascending: false }),
+      supabase.from('events').select('*').order('starts_at'),
+      supabase.from('trainings').select('*').order('starts_at'),
+      Bolt Database
+        .from('event_registrations')
+        .select('*, events(title, starts_at)'),
+    ]);
+
+    setMembers((membersData || []) as Profile[]);
+    setEvents((eventsData || []) as Event[]);
+    setTrainings((trainingsData || []) as Training[]);
+    setRegistrations((registrationsData || []) as Registration[]);
+  };
+
+  useEffect(() => {
+    refresh();
+  }, []);
+
+  const setStatus = async (id: string, status: string) => {
+    const { error } = await supabase.rpc('admin_set_member_status', {
+      p_member_id: id,
+      p_status: status,
+    });
+
+    if (error) {
+      setNotice('La modification n’a pas pu être enregistrée.');
+    } else {
+      setNotice('Statut du membre mis à jour.');
+      refresh();
+    }
+  };
+
+  const setRole = async (id: string, role: string) => {
+    const { error } = await supabase.rpc('admin_set_member_role', {
+      p_member_id: id,
+      p_role: role,
+    });
+
+    if (error) {
+      setNotice('Le rôle n’a pas pu être modifié.');
+    } else {
+      refresh();
+    }
+  };
+
+  return (
+    <Shell profile={profile} admin>
+      <div className="admin-heading">
+        <div>
+          <p className="eyebrow">CENTRE DE PILOTAGE</p>
+          <h1>Administration ACMM</h1>
+          <p className="muted">
+            Gérez les membres, les rendez-vous et la transmission médicale.
+          </p>
+        </div>
+
+        <div className="admin-seal">
+          <ShieldCheck size={18} />
+          Accès sécurisé
+        </div>
+      </div>
+
+      {notice && (
+        <div className="alert success dismissable">
+          {notice}
+          <button onClick={() => setNotice('')}>
+            <X size={16} />
+          </button>
+        </div>
+      )}
+
+      <nav className="tabs">
+        {[
+          ['overview', 'Vue d’ensemble'],
+          ['members', 'Membres'],
+          ['events', 'Événements'],
+          ['trainings', 'Formations'],
+        ].map(([key, label]) => (
+          <button
+            className={tab === key ? 'active' : ''}
+            onClick={() => setTab(key as typeof tab)}
+            key={key}
+          >
+            {label}
+          </button>
+        ))}
+      </nav>
+
+      {tab === 'overview' && (
+        <>
+          <div className="stats-grid admin-stats">
+            <Stat
+              icon={<Users />}
+              value={members.length}
+              label="Membres inscrits"
+            />
+
+            <Stat
+              icon={<Clock3 />}
+              value={members.filter((member) => member.status === 'pending').length}
+              label="Demandes en attente"
+            />
+
+            <Stat
+              icon={<CalendarDays />}
+              value={events.length}
+              label="Événements"
+            />
+
+            <Stat
+              icon={<GraduationCap />}
+              value={trainings.length}
+              label="Formations"
+            />
+          </div>
+
+          <div className="two-col">
+            <section className="panel">
+              <div className="section-title">
+                <h2>Demandes récentes</h2>
+
+                <button
+                  className="text-button"
+                  onClick={() => setTab('members')}
+                >
+                  Tout voir <ArrowRight size={15} />
+                </button>
+              </div>
+
+              {members
+                .filter((member) => member.status === 'pending')
+                .slice(0, 5)
+                .map((member) => (
+                  <MemberRow
+                    key={member.id}
+                    member={member}
+                    onStatus={setStatus}
+                    onRole={setRole}
+                  />
+                ))}
+
+              {!members.some((member) => member.status === 'pending') && (
+                <Empty text="Aucune demande en attente." />
+              )}
+            </section>
+
+            <section className="panel">
+              <div className="section-title">
+                <h2>Inscriptions récentes</h2>
+              </div>
+
+              {registrations.slice(0, 6).map((registration) => (
+                <div className="list-row" key={registration.id}>
+                  <div className="list-icon">
+                    <CalendarDays size={17} />
+                  </div>
+
+                  <div>
+                    <strong>
+                      {registration.events?.title || 'Événement'}
+                    </strong>
+
+                    <small>
+                      {members.find(
+                        (member) => member.id === registration.member_id,
+                      )?.full_name || 'Membre'}{' '}
+                      · {registration.status}
+                    </small>
+                  </div>
+                </div>
+              ))}
+
+              {!registrations.length && (
+                <Empty text="Aucune inscription pour le moment." />
+              )}
+            </section>
+          </div>
+        </>
+      )}
+
+      {tab === 'members' && (
+        <section className="panel wide-panel">
+          <div className="section-title">
+            <div>
+              <h2>Tous les membres</h2>
+              <p className="muted">
+                Validez les nouvelles demandes et gérez les accès.
+              </p>
+            </div>
+          </div>
+
+          <div className="member-list">
+            {members.map((member) => (
+              <MemberRow
+                key={member.id}
+                member={member}
+                onStatus={setStatus}
+                onRole={setRole}
+              />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {tab === 'events' && (
+        <ManagementList
+          title="Événements médicaux"
+          items={events}
+          kind="event"
+          onAdd={() => setShowForm('event')}
+          onRefresh={refresh}
+        />
+      )}
+
+      {tab === 'trainings' && (
+        <ManagementList
+          title="Sessions de formation"
+          items={trainings}
+          kind="training"
+          onAdd={() => setShowForm('training')}
+          onRefresh={refresh}
+        />
+      )}
+
+      {showForm && (
+        <ContentForm
+          kind={showForm}
+          onClose={() => setShowForm(null)}
+          onSaved={() => {
+            setShowForm(null);
+            refresh();
+          }}
+        />
+      )}
+    </Shell>
+  );
+}
+
+function MemberRow({
+  member,
+  onStatus,
+  onRole,
+}: {
+  member: Profile;
+  onStatus: (id: string, status: string) => void;
+  onRole: (id: string, role: string) => void;
+}) {
+  return (
+    <div className="member-row">
+      <div className="avatar large">
+        {(member.full_name || member.email).charAt(0).toUpperCase()}
+      </div>
+
+      <div className="member-main">
+        <strong>{member.full_name || 'Sans nom'}</strong>
+        <span>
+          {member.email}
+          {member.specialty ? ` · ${member.specialty}` : ''}
+        </span>
+      </div>
+
+      <span className={`status-pill ${member.status}`}>
+        {member.status}
+      </span>
+
+      <select
+        value={member.status}
+        onChange={(event) => onStatus(member.id, event.target.value)}
+        aria-label="Statut"
+      >
+        <option value="pending">pending</option>
+        <option value="approved">approved</option>
+        <option value="rejected">rejected</option>
+        <option value="suspended">suspended</option>
+      </select>
+
+      <select
+        value={member.role}
+        onChange={(event) => onRole(member.id, event.target.value)}
+        aria-label="Rôle"
+      >
+        <option value="member">Membre</option>
+        <option value="admin">Admin</option>
+      </select>
+    </div>
+  );
+}
+
+function ManagementList({
+  title,
+  items,
+  kind,
+  onAdd,
+  onRefresh,
+}: {
+  title: string;
+  items: (Event | Training)[];
+  kind: 'event' | 'training';
+  onAdd: () => void;
+  onRefresh: () => void;
+}) {
+  const remove = async (id: string) => {
+    await Bolt Database
+      .from(kind === 'event' ? 'events' : 'trainings')
+      .delete()
+      .eq('id', id);
+
+    onRefresh();
+  };
+
+  return (
+    <section className="panel wide-panel">
+      <div className="section-title">
+        <div>
+          <h2>{title}</h2>
+          <p className="muted">
+            Créez et actualisez les rendez-vous visibles par les membres.
+          </p>
+        </div>
+
+        <button className="button primary small" onClick={onAdd}>
+          Ajouter <ArrowRight size={15} />
+        </button>
+      </div>
+
+      <div className="management-list">
+        {items.map((item) => (
+          <div className="management-row" key={item.id}>
+            <div className="date-badge compact">
+              <strong>{new Date(item.starts_at).getDate()}</strong>
+              <span>
+                {new Intl.DateTimeFormat('fr-FR', {
+                  month: 'short',
+                }).format(new Date(item.starts_at))}
+              </span>
+            </div>
+
+            <div>
+              <strong>{item.title}</strong>
+              <small>
+                {formatDate(item.starts_at)} ·{' '}
+                {item.location || 'Lieu à confirmer'}
+              </small>
+            </div>
+
+            <span className="tag teal">
+              {item.is_published ? 'Publié' : 'Brouillon'}
+            </span>
+
+            <button
+              className="icon-button danger"
+              onClick={() => remove(item.id)}
+              title="Supprimer"
+            >
+              <X size={17} />
+            </button>
+          </div>
+        ))}
+
+        {!items.length && <Empty text="Aucun contenu pour le moment." />}
+      </div>
+    </section>
+  );
+}
+
+function ContentForm({
+  kind,
+  onClose,
+  onSaved,
+}: {
+  kind: 'event' | 'training';
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [form, setForm] = useState({
+    title: '',
+    description: '',
+    location: '',
+    instructor: '',
+    starts_at: '',
+    capacity: '',
+  });
+
+  const [error, setError] = useState('');
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+
+    const table = kind === 'event' ? 'events' : 'trainings';
+
+    const payload = {
+      ...form,
+      capacity: form.capacity ? Number(form.capacity) : null,
+      created_by: (await supabase.auth.getUser()).data.user?.id,
+      is_published: true,
+    };
+
+    const { error: saveError } = await Bolt Database
+      .from(table)
+      .insert(payload);
+
+    if (saveError) {
+      setError('Impossible d’enregistrer ce contenu.');
+    } else {
+      onSaved();
+    }
+  };
+
+  return (
+    <div className="modal-backdrop">
+      <form className="modal" onSubmit={submit}>
+        <div className="section-title">
+          <div>
+            <p className="eyebrow">NOUVEAU CONTENU</p>
+            <h2>
+              {kind === 'event'
+                ? 'Créer un événement'
+                : 'Créer une formation'}
+            </h2>
+          </div>
+
+          <button
+            type="button"
+            className="icon-button"
+            onClick={onClose}
+          >
+            <X size={19} />
+          </button>
+        </div>
+
+        <label>
+          Titre
+          <input
+            required
+            value={form.title}
+            onChange={(event) =>
+              setForm({
+                ...form,
+                title: event.target.value,
+              })
+            }
+          />
+        </label>
+
+        <label>
+          Description
+          <textarea
+            rows={3}
+            value={form.description}
+            onChange={(event) =>
+              setForm({
+                ...form,
+                description: event.target.value,
+              })
+            }
+          />
+        </label>
+
+        {kind === 'training' && (
+          <label>
+            Intervenant
+            <input
+              value={form.instructor}
+              onChange={(event) =>
+                setForm({
+                  ...form,
+                  instructor: event.target.value,
+                })
+              }
+            />
+          </label>
+        )}
+
+        <div className="form-grid">
+          <label>
+            Date et heure
+            <input
+              required
+              type="datetime-local"
+              value={form.starts_at}
+              onChange={(event) =>
+                setForm({
+                  ...form,
+                  starts_at: event.target.value,
+                })
+              }
+            />
+          </label>
+
+          <label>
+            Capacité
+            <input
+              type="number"
+              min="1"
+              value={form.capacity}
+              onChange={(event) =>
+                setForm({
+                  ...form,
+                  capacity: event.target.value,
+                })
+              }
+            />
+          </label>
+        </div>
+
+        <label>
+          Lieu
+          <input
+            value={form.location}
+            onChange={(event) =>
+              setForm({
+                ...form,
+                location: event.target.value,
+              })
+            }
+          />
+        </label>
+
+        {error && <div className="alert error">{error}</div>}
+
+        <div className="modal-actions">
+          <button
+            type="button"
+            className="button secondary"
+            onClick={onClose}
+          >
+            Annuler
+          </button>
+
+          <button className="button primary">Publier</button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+export default App;
